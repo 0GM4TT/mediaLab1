@@ -1,36 +1,210 @@
-<!DOCTYPE html>
-<html>
+<!doctype html>
+<html lang="en">
 <head>
-<meta charset=utf-8/>
-<title>Lab 1. Introduction to HTML5 and HLS</title>
-  
-  <!--
-  Embed needed js libraries for video player. Note, libraries needs to be hosted on your server, under /js folder.
-   -->
-  <!--
-  Location for CSS if needed. Note, cascade style sheets needs to be hosted on your server, under /css folder.
-  -->
-   
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width,initial-scale=1" />
+  <title>mediaLab1 – HLS Player</title>
 
+  <!-- hls.js (HLS in most browsers like Chrome/Firefox/Edge) -->
+  <script src="https://cdn.jsdelivr.net/npm/hls.js@1"></script>
 
+  <style>
+    body { font-family: system-ui, -apple-system, Segoe UI, Roboto, Arial, sans-serif; margin: 24px; }
+    .wrap { max-width: 900px; margin: 0 auto; }
+    video { width: 100%; max-height: 520px; background: #000; border-radius: 10px; }
+    .controls { display: flex; flex-wrap: wrap; gap: 10px; margin-top: 12px; align-items: center; }
+    button, select { padding: 10px 12px; border-radius: 10px; border: 1px solid #ccc; background: #fff; cursor: pointer; }
+    button:hover { background: #f6f6f6; }
+    .row { display: grid; grid-template-columns: 1fr; gap: 10px; margin-top: 12px; }
+    .status { font-size: 14px; color: #444; padding: 10px 12px; border: 1px solid #eee; border-radius: 10px; background: #fafafa; }
+    .note { color: #666; font-size: 13px; margin-top: 10px; }
+    code { background: #f2f2f2; padding: 2px 6px; border-radius: 6px; }
+  </style>
 </head>
 <body>
-  <h1>My first HLS player</h1>
-  
-  <!--
-  location for your player window
-  -->
-  
-	<button type="button">Play</button>
-	<button type="button">Pause</button>
-	<button type="button">Stop</button>
-	<button type="button">Jump to 5 sec forward</button>
-	<button type="button">Jump to 5 sec backwards</button>	
-	
-	<p>Playlist</p>
-	
-	<input type="text" name="url1" size="100" value="https://d2zihajmogu5jn.cloudfront.net/bipbop-advanced/bipbop_16x9_variant.m3u8"><button type="button">Load</button><br>
-	<input type="text" name="url2" size="100" value="https://d2zihajmogu5jn.cloudfront.net/bipbop-advanced/bipbop_16x9_variant.m3u8"><button type="button">Load</button><br>
-	<button type="button">Shuffle</button>
+  <div class="wrap">
+    <h1>mediaLab1 – HTML5 HLS Player</h1>
+
+    <video id="video" controls playsinline></video>
+
+    <div class="controls">
+      <!-- Required-ish features -->
+      <button id="btnPlay">Play</button>
+      <button id="btnPause">Pause</button>
+      <button id="btnStop">Stop</button>
+      <button id="btnBack">-5s</button>
+      <button id="btnFwd">+5s</button>
+
+      <!-- Playlist -->
+      <label>
+        Playlist:
+        <select id="playlist"></select>
+      </label>
+
+      <!-- Shuffle -->
+      <button id="btnShuffle">Shuffle</button>
+    </div>
+
+    <div class="row">
+      <div class="status" id="status">Status: idle</div>
+      <div class="note">
+        Stream #1: <code>https://video-dev.github.io/streams/x36xhzz/x36xhzz.m3u8</code><br/>
+        Backup: <code>https://d2zihajmogu5jn.cloudfront.net/bipbop-advanced/bipbop_16x9_variant.m3u8</code>
+      </div>
+    </div>
+  </div>
+
+  <script>
+    const video = document.getElementById("video");
+    const statusEl = document.getElementById("status");
+
+    const playlistEl = document.getElementById("playlist");
+    const btnPlay = document.getElementById("btnPlay");
+    const btnPause = document.getElementById("btnPause");
+    const btnStop = document.getElementById("btnStop");
+    const btnBack = document.getElementById("btnBack");
+    const btnFwd = document.getElementById("btnFwd");
+    const btnShuffle = document.getElementById("btnShuffle");
+
+    // Required URLs from README
+    const streams = [
+      {
+        name: "Big Bunny (primary)",
+        url: "https://video-dev.github.io/streams/x36xhzz/x36xhzz.m3u8",
+      },
+      {
+        name: "BipBop (backup)",
+        url: "https://d2zihajmogu5jn.cloudfront.net/bipbop-advanced/bipbop_16x9_variant.m3u8",
+      },
+    ];
+
+    // Fill playlist dropdown
+    streams.forEach((s, idx) => {
+      const opt = document.createElement("option");
+      opt.value = idx;
+      opt.textContent = s.name;
+      playlistEl.appendChild(opt);
+    });
+
+    let hls = null;
+
+    function setStatus(msg) {
+      statusEl.textContent = "Status: " + msg;
+    }
+
+    function destroyHls() {
+      if (hls) {
+        try { hls.destroy(); } catch (e) {}
+        hls = null;
+      }
+    }
+
+    function loadStream(url) {
+      setStatus("loading stream...");
+      destroyHls();
+
+      // Safari (and some iOS) can play HLS natively
+      if (video.canPlayType("application/vnd.apple.mpegurl")) {
+        video.src = url;
+        video.addEventListener("loadedmetadata", () => setStatus("ready (native HLS)"), { once: true });
+        video.addEventListener("error", () => setStatus("error (native HLS)"));
+        return;
+      }
+
+      // Most browsers via hls.js
+      if (window.Hls && window.Hls.isSupported()) {
+        hls = new Hls({
+          // keeping defaults is fine for this lab
+        });
+
+        hls.attachMedia(video);
+        hls.on(Hls.Events.MEDIA_ATTACHED, () => {
+          hls.loadSource(url);
+        });
+
+        hls.on(Hls.Events.MANIFEST_PARSED, () => setStatus("ready (hls.js)"));
+        hls.on(Hls.Events.ERROR, (event, data) => {
+          setStatus("error: " + (data?.details || "unknown"));
+          // try to recover from some common errors
+          if (data && data.fatal) {
+            switch (data.type) {
+              case Hls.ErrorTypes.NETWORK_ERROR:
+                setStatus("fatal network error – trying restart...");
+                hls.startLoad();
+                break;
+              case Hls.ErrorTypes.MEDIA_ERROR:
+                setStatus("fatal media error – trying recover...");
+                hls.recoverMediaError();
+                break;
+              default:
+                setStatus("fatal error – reload page or switch stream");
+                destroyHls();
+                break;
+            }
+          }
+        });
+
+        return;
+      }
+
+      // If we reach here, browser doesn't support HLS
+      setStatus("HLS not supported in this browser");
+    }
+
+    function clampTime(t) {
+      const duration = Number.isFinite(video.duration) ? video.duration : null;
+      if (duration === null) return Math.max(0, t);
+      return Math.min(Math.max(0, t), duration);
+    }
+
+    // Controls
+    btnPlay.addEventListener("click", async () => {
+      try {
+        await video.play();
+        setStatus("playing");
+      } catch (e) {
+        setStatus("play blocked (try clicking video first)");
+      }
+    });
+
+    btnPause.addEventListener("click", () => {
+      video.pause();
+      setStatus("paused");
+    });
+
+    btnStop.addEventListener("click", () => {
+      video.pause();
+      video.currentTime = 0;
+      setStatus("stopped (time reset)");
+    });
+
+    btnBack.addEventListener("click", () => {
+      video.currentTime = clampTime(video.currentTime - 5);
+      setStatus("jump -5s");
+    });
+
+    btnFwd.addEventListener("click", () => {
+      video.currentTime = clampTime(video.currentTime + 5);
+      setStatus("jump +5s");
+    });
+
+    playlistEl.addEventListener("change", () => {
+      const idx = Number(playlistEl.value);
+      const stream = streams[idx];
+      loadStream(stream.url);
+      setStatus("stream selected: " + stream.name);
+    });
+
+    btnShuffle.addEventListener("click", () => {
+      const idx = Math.floor(Math.random() * streams.length);
+      playlistEl.value = String(idx);
+      const stream = streams[idx];
+      loadStream(stream.url);
+      setStatus("shuffle -> " + stream.name);
+    });
+
+    // Load default stream on page load
+    loadStream(streams[0].url);
+  </script>
 </body>
 </html>
